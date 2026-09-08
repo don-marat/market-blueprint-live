@@ -1,9 +1,7 @@
-finviz
-pandas
 fastapi
 uvicorn
-requests
-python-multipart
+pandas
+yfinance
 lxml
-beautifulsoup4
-tqdm
+requests
+finviz
