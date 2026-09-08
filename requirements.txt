@@ -1,7 +1,6 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pandas
 yfinance
 lxml
 requests
-finviz
