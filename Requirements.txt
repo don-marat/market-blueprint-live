@@ -1,0 +1,9 @@
+finviz
+pandas
+fastapi
+uvicorn
+requests
+python-multipart
+lxml
+beautifulsoup4
+tqdm
