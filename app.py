@@ -6,7 +6,7 @@ import yfinance as yf
 import traceback
 import requests
 
-app = FastAPI(title="Market Blueprint Desk LIVE", version="2.6 - Filters + TV")
+app = FastAPI(title="Market Blueprint Desk LIVE", version="2.7 - Advanced Filters")
 
 CACHE = {"last_run": None, "leaders": [], "regime": "Unknown", "sectors": {}, "universe_source": "static"}
 
@@ -150,7 +150,7 @@ table{{width:100%;border-collapse:collapse}} td,th{{padding:8px;border-bottom:1p
 .btn:hover{{opacity:0.9}}
 </style></head>
 <body>
-<h1>Market Blueprint Desk <span class="green">• LIVE v2.6 Filters + TV</span></h1>
+<h1>Market Blueprint Desk <span class="green">• LIVE v2.7 Advanced Filters</span></h1>
 <p>Last run: {CACHE['last_run']} | Regime: <span class="green">{CACHE['regime']}</span> | Leaders: {len(CACHE['leaders'])}<br>
 <span class="muted">{CACHE.get('universe_source','')} | 🔥 = New from TradingView</span></p>
 
@@ -161,13 +161,20 @@ table{{width:100%;border-collapse:collapse}} td,th{{padding:8px;border-bottom:1p
 <div class="filter-row">
 <label>Min TTI Score<input type="range" id="f_tti" min="0" max="100" value="60" oninput="applyFilters()"><span id="f_tti_v">60</span></label>
 <label>Min 1M %<input type="number" id="f_1m" value="0" step="1" oninput="applyFilters()" style="width:90px"></label>
+<label>Min 1W %<input type="number" id="f_1w" value="-99" step="1" oninput="applyFilters()" style="width:90px"></label>
 <label>RSI от<input type="number" id="f_rsi_min" value="0" min="0" max="100" oninput="applyFilters()" style="width:80px"></label>
 <label>RSI до<input type="number" id="f_rsi_max" value="100" min="0" max="100" oninput="applyFilters()" style="width:80px"></label>
-<label>Sector<select id="f_sector" onchange="applyFilters()"><option value="">All</option><option>Technology</option><option>Communication</option><option>Consumer</option><option>Utilities</option><option>Healthcare</option></select></label>
-<label>Search ticker<input type="text" id="f_search" placeholder="COIN, NVDA..." oninput="applyFilters()" style="width:140px"></label>
-<label><span style="opacity:0">.</span><button class="btn" onclick="resetFilters()">Reset</button></label>
 </div>
-<div class="muted">Показано: <span id="count">0</span> / {len(CACHE['leaders'])} | Сортировка кликом по заголовку</div>
+<div class="filter-row">
+<label>Price от $<input type="number" id="f_price_min" value="0" min="0" oninput="applyFilters()" style="width:90px"></label>
+<label>Price до $<input type="number" id="f_price_max" value="10000" min="0" oninput="applyFilters()" style="width:90px"></label>
+<label>Trend<select id="f_trend" onchange="applyFilters()"><option value="">All Trends</option><option value="90">🔥 Strong Uptrend (TTI 90)</option><option value="70">Uptrend</option><option value="40">Weak / Down</option></select></label>
+<label>Sector<select id="f_sector" onchange="applyFilters()"><option value="">All Sectors</option><option>Technology</option><option>Communication</option><option>Consumer</option><option>Utilities</option><option>Healthcare</option></select></label>
+<label>New Only<input type="checkbox" id="f_new" onchange="applyFilters()" style="min-width:20px"></label>
+<label>Search ticker<input type="text" id="f_search" placeholder="COIN, NVDA..." oninput="applyFilters()" style="width:140px"></label>
+<label><span style="opacity:0">.</span><button class="btn" onclick="resetFilters()">Reset</button><button class="btn" style="background:#27272a;color:#fff;margin-left:6px" onclick="exportCSV()">CSV</button></label>
+</div>
+<div class="muted">Показано: <span id="count">0</span> / {len(CACHE['leaders'])} | Сортировка кликом по заголовку | 🔥 = New from TradingView</div>
 </div>
 
 <div class="card"><h3>Sectors (capital flow)</h3><pre>{CACHE['sectors']}</pre></div>
@@ -193,12 +200,26 @@ function applyFilters(){{
   document.getElementById('f_tti_v').innerText=document.getElementById('f_tti').value;
   const minTTI=parseFloat(document.getElementById('f_tti').value)||0;
   const min1M=parseFloat(document.getElementById('f_1m').value)||-999;
+  const min1W=parseFloat(document.getElementById('f_1w').value)||-999;
   const rsiMin=parseFloat(document.getElementById('f_rsi_min').value)||0;
   const rsiMax=parseFloat(document.getElementById('f_rsi_max').value)||100;
+  const priceMin=parseFloat(document.getElementById('f_price_min').value)||0;
+  const priceMax=parseFloat(document.getElementById('f_price_max').value)||999999;
+  const trend=document.getElementById('f_trend').value;
   const sector=document.getElementById('f_sector').value;
+  const newOnly=document.getElementById('f_new').checked;
   const search=document.getElementById('f_search').value.toUpperCase().trim();
 
-  let filtered=DATA.filter(l=> l.tti_score>=minTTI && l.perf_month_raw>=min1M && l.rsi>=rsiMin && l.rsi<=rsiMax && (sector===''||l.sector===sector) && (search===''||l.ticker.includes(search)) );
+  let filtered=DATA.filter(l=> 
+    l.tti_score>=minTTI && 
+    l.perf_month_raw>=min1M && 
+    l.perf_week_raw>=min1W &&
+    l.rsi>=rsiMin && l.rsi<=rsiMax && 
+    l.price>=priceMin && l.price<=priceMax &&
+    (trend===''||String(l.trend)===trend) &&
+    (sector===''||l.sector===sector) && 
+    (!newOnly || l.is_new) &&
+    (search===''||l.ticker.includes(search)) );
 
   filtered.sort((a,b)=>{{
     let av=a[sortKey], bv=b[sortKey];
@@ -210,10 +231,12 @@ function applyFilters(){{
   tbody.innerHTML='';
   filtered.forEach(l=>{{
     const isNew = l.is_new ? '🔥 ' : '';
-    tbody.innerHTML+=`<tr><td>${{isNew}}${{l.ticker}}</td><td>${{l.tti_score}}</td><td>${{l.perf_month}}</td><td>${{l.perf_week}}</td><td>${{l.rsi}}</td><td>$${{l.price}}</td><td>${{l.sector}}</td></tr>`;
+    const trendIcon = l.trend==90 ? '🚀' : l.trend==70 ? '📈' : '📉';
+    tbody.innerHTML+=`<tr><td>${{isNew}}${{l.ticker}}</td><td>${{l.tti_score}} ${{trendIcon}}</td><td>${{l.perf_month}}</td><td>${{l.perf_week}}</td><td>${{l.rsi}}</td><td>$${{l.price}}</td><td>${{l.sector}}</td></tr>`;
   }});
   document.getElementById('count').innerText=filtered.length;
   document.getElementById('title_count').innerText=filtered.length;
+  window._filtered=filtered;
 }}
 function sortBy(key){{
   if(sortKey===key) sortAsc=!sortAsc; else {{sortKey=key; sortAsc=false;}}
@@ -222,12 +245,24 @@ function sortBy(key){{
 function resetFilters(){{
   document.getElementById('f_tti').value=60;
   document.getElementById('f_1m').value=0;
+  document.getElementById('f_1w').value=-99;
   document.getElementById('f_rsi_min').value=0;
   document.getElementById('f_rsi_max').value=100;
+  document.getElementById('f_price_min').value=0;
+  document.getElementById('f_price_max').value=10000;
+  document.getElementById('f_trend').value='';
   document.getElementById('f_sector').value='';
+  document.getElementById('f_new').checked=false;
   document.getElementById('f_search').value='';
   sortKey='tti_score'; sortAsc=false;
   applyFilters();
+}}
+function exportCSV(){{
+  let csv='Ticker,TTI,1M,1W,RSI,Price,Sector,New\\n';
+  (window._filtered||[]).forEach(l=>{{csv+=`${{l.ticker}},${{l.tti_score}},${{l.perf_month_raw}},${{l.perf_week_raw}},${{l.rsi}},${{l.price}},${{l.sector}},${{l.is_new}}\\n`}});
+  const blob=new Blob([csv],{{type:'text/csv'}});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='leaders.csv'; a.click();
 }}
 applyFilters();
 </script>
@@ -238,9 +273,14 @@ applyFilters();
 def get_leaders(
     min_tti: float = Query(0),
     min_1m: float = Query(-999),
+    min_1w: float = Query(-999),
     max_rsi: float = Query(100),
     min_rsi: float = Query(0),
+    min_price: float = Query(0),
+    max_price: float = Query(999999),
+    trend: str = Query(""),
     sector: str = Query(""),
+    new_only: bool = Query(False),
     search: str = Query("")
 ):
     leaders = CACHE['leaders']
@@ -248,7 +288,11 @@ def get_leaders(
     for l in leaders:
         if l['tti_score'] < min_tti: continue
         if l['perf_month_raw'] < min_1m: continue
+        if l['perf_week_raw'] < min_1w: continue
         if l['rsi'] < min_rsi or l['rsi'] > max_rsi: continue
+        if l['price'] < min_price or l['price'] > max_price: continue
+        if trend and str(l['trend']) != trend: continue
+        if new_only and not l.get('is_new'): continue
         if sector and l['sector'] != sector: continue
         if search and search.upper() not in l['ticker']: continue
         filtered.append(l)
