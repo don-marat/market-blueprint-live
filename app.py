@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 import os
 
-app = FastAPI(title="Market Blueprint Desk LIVE", version="2.0")
+app = FastAPI(title="Market Blueprint Desk LIVE", version="2.1")
 
 CACHE = {"last_run": None, "leaders": [], "regime": "Unknown", "sectors": {}}
 
@@ -14,11 +14,11 @@ def fetch_leaders_job():
     try:
         print("Fetching live data from Finviz...")
         filters = [
-            'sh_price_o5', # price >$5
-            'sh_avgvol_o500', # vol >500k
-            'ta_sma20_pa', # above SMA20
-            'ta_sma50_pa', # above SMA50
-            'ta_highlow20d_nh', # new 20d high
+            'sh_price_o5',
+            'sh_avgvol_o500',
+            'ta_sma20_pa',
+            'ta_sma50_pa',
+            'ta_highlow20d_nh',
             'sh_instown_o30'
         ]
         screener = Screener(filters=filters, table='Performance', order='-perf1m')
@@ -59,7 +59,6 @@ def fetch_leaders_job():
             except:
                 continue
         
-        # Sector flow for top 50 - quick
         sectors = {}
         for l in leaders[:30]:
             sec = l['sector']
@@ -74,7 +73,7 @@ def fetch_leaders_job():
         print(f"Fetch error: {e}")
         import traceback; traceback.print_exc()
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def home():
     return f"""
     <html><head><title>Market Blueprint LIVE</title>
@@ -100,11 +99,10 @@ def trigger_fetch(background_tasks: BackgroundTasks):
     background_tasks.add_task(fetch_leaders_job)
     return {"status": "fetching started", "check": "/api/leaders in 30s"}
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok", "last_run": CACHE['last_run']}
 
-# Auto fetch on startup
 @app.on_event("startup")
 def startup():
     fetch_leaders_job()
